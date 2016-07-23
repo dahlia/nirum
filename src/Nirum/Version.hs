@@ -13,12 +13,9 @@ import qualified Paths_nirum as P
 -- See also: http://stackoverflow.com/a/2892624/383405
 
 -- | The semantic version of the running Nirum.
-version :: SV.Version
+version :: SV.SemVer
 version = case branch of
-    [major, minor, patch] ->
-        if length relTags == length tags
-        then SV.version major minor patch relTags []
-        else error ("invalid release identifiers: " ++ show relTags)
+    [major, minor, patch] -> SV.SemVer major minor patch relTags
     [_, _] -> error ("patch version is missing: " ++ show branch)
     [_] -> error ("minor version is missing: " ++ show branch)
     [] -> error "major version is missing"
@@ -26,15 +23,13 @@ version = case branch of
   where
     branch :: [Int]
     branch = versionBranch P.version
-    tags :: [String]
-    tags = versionTags P.version
-    relTags :: [SV.Identifier]
-    relTags = mapMaybe (SV.textual . pack) tags
+    relTags :: [String]
+    relTags = map pack $ versionTags P.version
 
 -- | The string representation of 'version'.
 versionString :: String
-versionString = SV.toString version
+versionString = SV.renderSV' version
 
 -- | The text representation of 'version'.
 versionText :: Text
-versionText = SV.toText version
+versionText = SV.renderSV version
