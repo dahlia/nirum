@@ -21,6 +21,7 @@ import Control.Monad (forM_, void, unless)
 import Data.Char (isSpace)
 import Data.Maybe (fromJust, isJust)
 import System.IO.Error (catchIOError)
+import System.IO.Unsafe (unsafePerformIO)
 
 import Data.Either (isRight)
 import Data.List (dropWhileEnd)
@@ -113,21 +114,23 @@ windows = os `elem` (["mingw32", "cygwin32", "win32"] :: [String])
 
 data PyVersion = PyVersion Int Int Int deriving (Eq, Ord, Show)
 
-installedPythonPaths :: Maybe FilePath -> IO [FilePath]
-installedPythonPaths cwd' = do
+installedPythonPaths :: IO [FilePath]
+installedPythonPaths = do
     (exitCode, stdOut, _) <- readCreateProcessWithExitCode proc' ""
     return $ case exitCode of
         ExitSuccess -> filter isValid $ lines' stdOut
         _ -> []
   where
     proc' :: CreateProcess
-    proc' = (if windows then proc "where.exe" ["python"] else proc "which" ["python3"]) { cwd = cwd' }
+    proc' = if windows
+            then proc "where.exe" ["python"]
+            else proc "which" ["python3"]
     lines' :: String -> [String]
     lines' = map T.unpack . filter (not . T.null) . map T.strip . T.lines . T.pack
 
-getPythonVersion :: Maybe FilePath -> FilePath -> IO (Maybe PyVersion)
-getPythonVersion cwd' path' = do
-    let proc' = (proc path' ["-V"]) { cwd = cwd' }
+getPythonVersion :: FilePath -> IO (Maybe PyVersion)
+getPythonVersion path' = do
+    let proc' = proc path' ["-V"]
     pyVersionStr <- readCreateProcess proc' ""
     return $ case runParser pyVersionParser "<python3>" pyVersionStr of
             Left _ -> Nothing
@@ -148,12 +151,13 @@ getPythonVersion cwd' path' = do
         digits <- some digitChar
         return (read digits :: Int)
 
-findPython :: Maybe FilePath -> IO (Maybe FilePath)
-findPython cwd' = installedPythonPaths cwd' >>= findPython'
+{-# NOINLINE findPython #-}
+findPython :: IO (Maybe FilePath)
+findPython = installedPythonPaths >>= findPython'
   where
     findPython' :: [FilePath] -> IO (Maybe FilePath)
     findPython' (x:xs) = do
-        pyVerM <- getPythonVersion cwd' x
+        pyVerM <- getPythonVersion x
         case pyVerM of
             Nothing -> findPython' xs
             Just version -> if version >= PyVersion 3 3 0
@@ -161,28 +165,23 @@ findPython cwd' = installedPythonPaths cwd' >>= findPython'
                             else findPython' xs
     findPython' [] = return Nothing
 
-runPython' :: Maybe FilePath -> [String] -> String -> IO (Maybe String)
-runPython' cwd' args stdinStr = do
-    pyPathM <- findPython cwd'
-    case pyPathM of
-        Nothing -> do
-            putStrLn "Python 3 seems not installed; skipping..."
-            return Nothing
-        Just path -> execute cwd' path args stdinStr
-  where
-    execute :: Maybe FilePath
-            -> FilePath
-            -> [String]
-            -> String
-            -> IO (Maybe String)
-    execute cwdPath pyPath args' stdinStr' = do
-        let proc' = (proc pyPath args') { cwd = cwdPath }
-        result <- readCreateProcess proc' stdinStr'
-        return $ Just result
+runPython' :: FilePath        -- | The Python interpreter path.
+           -> Maybe FilePath  -- | Working directory path.
+           -> [String]        -- | CLI arguments.
+           -> String          -- | Standard input content.
+           -> IO (Maybe String)
+runPython' pyPath cwd' args stdinStr = do
+    let proc' = (proc pyPath args) { cwd = cwd' }
+    result <- readCreateProcess proc' stdinStr
+    return $ Just result
 
-runPython :: Maybe FilePath -> String -> IO (Maybe String)
-runPython cwd' code' =
-    catchIOError (runPython' cwd' [] code') $ \e -> do
+runPython :: FilePath
+          -> Maybe FilePath
+          -> [String]
+          -> String
+          -> IO (Maybe String)
+runPython pyPath cwd' args code' =
+    catchIOError (runPython' pyPath cwd' args code') $ \e -> do
         putStrLn "\nThe following IO error was raised:\n"
         putStrLn $ indent "  " $ show e
         putStrLn "\n... while the following code was executed:\n"
@@ -192,10 +191,13 @@ runPython cwd' code' =
     indent :: String -> String -> String
     indent spaces content = unlines [spaces ++ l | l <- lines content]
 
-testPythonSuit :: Maybe FilePath -> String -> T.Text -> IO ()
-testPythonSuit cwd' suitCode testCode = do
+testPythonSuit :: ([String] -> String -> IO (Maybe String))
+               -> String
+               -> T.Text
+               -> IO ()
+testPythonSuit runPy suitCode testCode = do
     nirumPackageInstalledM <-
-        runPython cwd' [q|
+        runPy [] [q|
 try: import nirum
 except ImportError: print('F')
 else: print('T')
@@ -204,7 +206,7 @@ else: print('T')
         Just nirumPackageInstalled ->
             case strip nirumPackageInstalled of
                 "T" -> do
-                    resultM <- runPython cwd' suitCode
+                    resultM <- runPy [] suitCode
                     case resultM of
                         Just result ->
                             unless (strip result == "True") $
@@ -218,8 +220,11 @@ else: print('T')
     strip :: String -> String
     strip = dropWhile isSpace . dropWhileEnd isSpace
 
-testPython :: Maybe FilePath -> T.Text -> T.Text -> IO ()
-testPython cwd' defCode testCode = testPythonSuit cwd' code' testCode'
+testPython :: ([String] -> String -> IO (Maybe String))
+           -> T.Text
+           -> T.Text
+           -> IO ()
+testPython runPy defCode testCode = testPythonSuit runPy code' testCode'
   where
     -- to workaround hlint's "Eta reduce" warning
     -- hlint seems unable to look inside qq string literal...
@@ -232,9 +237,13 @@ if __name__ == '__main__':
     print(bool($testCode'))
 |]
 
-testRaisePython :: Maybe FilePath -> T.Text -> T.Text -> T.Text -> IO ()
-testRaisePython cwd' errorClassName defCode testCode =
-    testPythonSuit cwd' code' testCode''
+testRaisePython :: ([String] -> String -> IO (Maybe String))
+                -> T.Text
+                -> T.Text
+                -> T.Text
+                -> IO ()
+testRaisePython runPy errorClassName defCode testCode =
+    testPythonSuit runPy code' testCode''
   where
     -- to workaround hlint's "Eta reduce" warning
     -- hlint seems unable to look inside qq string literal...
@@ -414,7 +423,13 @@ spec = parallel $ do
             toNamePair (Name "abc" "lambda") `shouldBe` "('abc', 'lambda')"
             toNamePair (Name "lambda" "abc") `shouldBe` "('lambda_', 'abc')"
 
-    let test testRunner (Source pkg boundM) testCode =
+    let pythonPath = unsafePerformIO findPython
+        runPy = case pythonPath of
+                    Nothing -> \_ _ _ -> do
+                        putStrLn "Python 3 seems not installed; skipping..."
+                        return Nothing
+                    Just pyPath -> runPython pyPath
+        test testRunner (Source pkg boundM) testCode =
             case errors of
                 error':_ -> fail $ T.unpack error'
                 [] -> withSystemTempDirectory "nirumpy." $ \dir -> do
@@ -427,7 +442,7 @@ spec = parallel $ do
                         TI.putStrLn $ T.pack filePath'
                         TI.putStrLn code'
                         -- --}
-                    testRunner (Just dir) defCode testCode
+                    testRunner (runPy $ Just dir) defCode testCode
           where
             files :: M.Map FilePath (Either CompileError Code)
             files = compilePackage pkg
@@ -474,22 +489,14 @@ spec = parallel $ do
                                 , ("--requires", "nirum")
                                 ] :: [(String, T.Text)]
                 source = makeDummySource $ Module [] Nothing
-                testRunner cwd' _ _ =
-                    {--  <- remove '{' to print debug log
-                    do
-                        let spath = case cwd' of
-                                        Just c -> c </> "setup.py"
-                                        Nothing -> "setup.py"
-                        contents <- TI.readFile spath
-                        TI.putStrLn "=========== setup.py ==========="
-                        TI.putStrLn contents
-                        TI.putStrLn "=========== /setup.py =========="
-                    -- --}
-                        forM_ setupPyFields $ \(option, expected) -> do
-                            out <- runPython' cwd' ["setup.py", option] ""
-                            out `shouldSatisfy` isJust
-                            let Just result = out
-                            T.strip (T.pack result) `shouldBe` expected
+                testRunner = (\runPy' _ _ ->
+                    forM_ setupPyFields $ \(option, expected) -> do
+                        out <- runPy' ["setup.py", option] ""
+                        out `shouldSatisfy` isJust
+                        let Just result = out
+                        T.strip (T.pack result) `shouldBe` expected
+                    ) :: ([String] -> String -> IO (Maybe String))
+                      -> T.Text -> T.Text -> IO ()
             test testRunner source T.empty
         specify "boxed type" $ do
             let decl = TypeDeclaration "float-box" (BoxedType "float64") empty
