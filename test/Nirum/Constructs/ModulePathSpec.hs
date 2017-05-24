@@ -14,6 +14,7 @@ import Nirum.Constructs.ModulePath ( ModulePath (ModuleName, ModulePath)
                                    , hierarchies
                                    , fromFilePath
                                    , fromIdentifiers
+                                   , fromText
                                    , replacePrefix
                                    )
 
@@ -34,6 +35,18 @@ spec =
             fromIdentifiers ["Foo", "BAR", "baZ"] `shouldBe` Just fooBarBaz
             fromIdentifiers ["foo", "bar-baz2"] `shouldBe` Just fooBarBaz2
             fromIdentifiers ["FOO", "bar_baz2"] `shouldBe` Just fooBarBaz2
+        specify "fromText" $ do
+            fromText "" `shouldBe` Nothing
+            fromText "foo" `shouldBe` Just ["foo"]
+            fromText "foo.bar" `shouldBe` Just ["foo", "bar"]
+            fromText "foo.bar-baz" `shouldBe` Just ["foo", "bar-baz"]
+            fromText "foo." `shouldBe` Nothing
+            fromText "foo.bar." `shouldBe` Nothing
+            fromText ".foo" `shouldBe` Nothing
+            fromText ".foo.bar" `shouldBe` Nothing
+            fromText "foo..bar" `shouldBe` Nothing
+            fromText "foo.bar>" `shouldBe` Nothing
+            fromText "foo.bar-" `shouldBe` Nothing
         specify "fromFilePath" $ do
             fromFilePath "" `shouldBe` Nothing
             fromFilePath "foo.nrm" `shouldBe` Just foo

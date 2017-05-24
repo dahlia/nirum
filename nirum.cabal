@@ -51,6 +51,7 @@ library
                  ,     Nirum.Targets.Docs
                  ,     Nirum.Targets.List
                  ,     Nirum.Targets.Python
+                 ,     Nirum.Targets.NewPython
                  ,     Nirum.Version
   build-depends:       base                     >=4.7     && <5
                ,       blaze-html               >=0.8.1.3 && <0.9

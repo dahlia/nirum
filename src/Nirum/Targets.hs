@@ -40,6 +40,7 @@ import Nirum.Targets.List (targetProxyMapQ)
 
 -- these targets adds automatically
 import Nirum.Targets.Docs ()
+import Nirum.Targets.NewPython ()
 import Nirum.Targets.Python ()
 
 data BuildError = TargetNameError TargetName

@@ -6,6 +6,7 @@ module Nirum.Constructs.ModulePath ( ModulePath ( ModuleName
                                                 )
                                    , fromFilePath
                                    , fromIdentifiers
+                                   , fromText
                                    , hierarchy
                                    , hierarchies
                                    , replacePrefix
@@ -16,16 +17,16 @@ import Data.Maybe (fromMaybe, mapMaybe)
 import GHC.Exts (IsList (Item, fromList, toList))
 
 import qualified Data.Set as S
-import Data.Text (intercalate, pack)
+import Data.Text (Text, intercalate, pack, split)
 import System.FilePath (splitDirectories, stripExtension)
 
 import Nirum.Constructs (Construct (toCode))
-import Nirum.Constructs.Identifier (Identifier, fromText)
+import qualified Nirum.Constructs.Identifier as I
 
 data ModulePath = ModulePath { path :: ModulePath
-                             , moduleName :: Identifier
+                             , moduleName :: I.Identifier
                              }
-                | ModuleName { moduleName :: Identifier }
+                | ModuleName { moduleName :: I.Identifier }
                 deriving (Eq, Show)
 
 instance Ord ModulePath where
@@ -34,13 +35,20 @@ instance Ord ModulePath where
 instance Construct ModulePath where
     toCode = intercalate "." . map toCode . toList
 
-fromIdentifiers :: [Identifier] -> Maybe ModulePath
+fromIdentifiers :: [I.Identifier] -> Maybe ModulePath
 fromIdentifiers [] = Nothing
 fromIdentifiers [identifier] = Just $ ModuleName identifier
 fromIdentifiers identifiers = fmap (`ModulePath` last identifiers) init'
   where
     init' :: Maybe ModulePath
     init' = fromIdentifiers $ init identifiers
+
+fromText :: Text -> Maybe ModulePath
+fromText string =
+    mapM I.fromText identTexts >>= fromIdentifiers
+  where
+    identTexts :: [Text]
+    identTexts = split (== '.') string
 
 fromFilePath :: FilePath -> Maybe ModulePath
 fromFilePath filePath =
@@ -54,8 +62,8 @@ fromFilePath filePath =
     paths :: [FilePath]
     paths = replaceLast (fromMaybe "" . stripExtension "nrm" . map toLower)
                         (splitDirectories filePath)
-    fileIdentifiers :: [Identifier]
-    fileIdentifiers = mapMaybe (fromText . pack) paths
+    fileIdentifiers :: [I.Identifier]
+    fileIdentifiers = mapMaybe (I.fromText . pack) paths
 
 hierarchy :: ModulePath -> S.Set ModulePath
 hierarchy m@ModuleName {} = S.singleton m
@@ -73,7 +81,7 @@ replacePrefix from to path'
 
 
 instance IsList ModulePath where
-    type Item ModulePath = Identifier
+    type Item ModulePath = I.Identifier
     fromList identifiers =
         fromMaybe (error "ModulePath cannot be empty")
                   (fromIdentifiers identifiers)

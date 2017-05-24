@@ -32,7 +32,6 @@ module Nirum.Targets.Python ( Code
                             , insertStandardImport
                             , insertThirdPartyImports
                             , minimumRuntime
-                            , parseModulePath
                             , renameModulePath
                             , runCodeGen
                             , stringLiteral
@@ -73,6 +72,7 @@ import Nirum.Constructs.ModulePath ( ModulePath
                                    , hierarchies
                                    , replacePrefix
                                    )
+import qualified Nirum.Constructs.ModulePath as MP
 import Nirum.Constructs.Name (Name (Name))
 import qualified Nirum.Constructs.Name as N
 import Nirum.Constructs.Service ( Method ( Method
@@ -1141,13 +1141,6 @@ compilePackage' package@Package { metadata = Metadata { target = target' } } =
                             (InstallRequires [] [])
                             [deps | (_, Right (deps, _)) <- modules']
 
-parseModulePath :: T.Text -> Maybe ModulePath
-parseModulePath string =
-    mapM I.fromText identTexts >>= fromIdentifiers
-  where
-    identTexts :: [T.Text]
-    identTexts = T.split (== '.') string
-
 instance Target Python where
     type CompileResult Python = Code
     type CompileError Python = CompileError'
@@ -1162,8 +1155,8 @@ instance Target Python where
             Left (FieldError _) -> Right HM.empty
             otherwise' -> otherwise'
         renamePairs <- sequence
-            [ case (parseModulePath k, v) of
-                  (Just modulePath', VString v') -> case parseModulePath v' of
+            [ case (MP.fromText k, v) of
+                  (Just modulePath', VString v') -> case MP.fromText v' of
                       Just altPath -> Right (modulePath', altPath)
                       Nothing -> Left $ FieldValueError [qq|renames.$k|]
                           [qq|expected a module path, not "$v'"|]
