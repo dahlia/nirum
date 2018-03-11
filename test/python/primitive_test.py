@@ -9,7 +9,8 @@ from six import PY3
 from fixture.foo import (Album, CultureAgnosticName, Dog,
                          EastAsianName, EvaChar,
                          FloatUnbox, Gender, ImportedTypeUnbox, Irum,
-                         Line, MixedName, Mro, Music, NoMro, NullService,
+                         Line, MixedName, Mro, Music, NoMro,
+                         NameOverwrappingFieldRecord, NullService,
                          Person, People,
                          Point1, Point2, Point3d, Pop, PingService, Product,
                          RecordWithMap, RecordWithOptionalRecordField,
@@ -481,3 +482,41 @@ def test_map_serializer():
             },
         ],
     }
+
+
+def test_name_overwapping_field():
+    NameOverwrappingFieldRecord(
+        typing={'a': ['b', 'c']},
+        collections={'a': {'b', 'c'}},
+        numbers=1234,
+        uuid=uuid.uuid4(),
+    )
+    with raises(TypeError) as ei:
+        NameOverwrappingFieldRecord(
+            typing={'invalid'},
+            collections={'a': {'b', 'c'}},
+            numbers=1234,
+            uuid=uuid.uuid4(),
+        )
+    with raises(TypeError) as ei:
+        NameOverwrappingFieldRecord(
+            typing={'a': ['b', 'c']},
+            collections={'invalid'},
+            numbers=1234,
+            uuid=uuid.uuid4(),
+        )
+    with raises(TypeError) as ei:
+        NameOverwrappingFieldRecord(
+            typing={'a': ['b', 'c']},
+            collections={'a': {'b', 'c'}},
+            numbers='invalid',
+            uuid=uuid.uuid4(),
+        )
+    with raises(TypeError) as ei:
+        NameOverwrappingFieldRecord(
+            typing={'a': ['b', 'c']},
+            collections={'a': {'b', 'c'}},
+            numbers=1234,
+            uuid='invalid',
+        )
+    assert str(ei.value) == "uuid must be a value of uuid.UUID, not 'invalid'"

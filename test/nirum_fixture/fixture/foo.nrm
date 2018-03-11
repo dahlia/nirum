@@ -133,3 +133,10 @@ service sample-service (
 record record-with-map (
     {text: text} text-to-text,
 );
+
+record name-overwrapping-field-record (
+    {text: [text]} typing,
+    {text: {text}} collections,
+    bigint numbers,
+    uuid uuid,
+);
